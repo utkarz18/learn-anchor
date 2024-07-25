@@ -1,6 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { expect } from "chai"
+import { getAssociatedTokenAddress, getAccount } from "@solana/spl-token"
 import { AnchorMovieReviewProgram } from "../target/types/anchor_movie_review_program";
 
 describe("anchor-movie-review-program", () => {
@@ -8,7 +9,7 @@ describe("anchor-movie-review-program", () => {
   const provider = anchor.AnchorProvider.env()
   anchor.setProvider(provider)
 
-  const program = anchor.workspace.AnchorMovieReviewProgram as Program<AnchorMovieReviewProgram>;
+  const program = anchor.workspace.AnchorMovieReviewProgram as Program<AnchorMovieReviewProgram>
 
   const movie = {
     title: "Just a test movie",
@@ -21,18 +22,37 @@ describe("anchor-movie-review-program", () => {
     program.programId
   )
 
+  const [mint] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("mint")],
+    program.programId
+  )
+
+  it("Initializes the reward token", async () => {
+    const tx = await program.methods.initializeTokenMint().rpc()
+  })
 
   it("Movie review is added`", async () => {
-    // Add your test here.
+    const tokenAccount = await getAssociatedTokenAddress(
+      mint,
+      provider.wallet.publicKey
+    )
+
     const tx = await program.methods
       .addMovieReview(movie.title, movie.description, movie.rating)
+      .accounts({
+        tokenAccount: tokenAccount
+      } as any)
       .rpc();
 
     const account = await program.account.movieAccountState.fetch(moviePda)
     expect(movie.title === account.title)
     expect(movie.rating === account.rating)
     expect(movie.description === account.description)
-    expect(account.reviewer === provider.wallet.publicKey)
+    expect(account.reviewer.toBase58()).to.equal(provider.wallet.publicKey.toBase58())
+
+
+    const userAta = await getAccount(provider.connection, tokenAccount)
+    expect(Number(userAta.amount)).to.equal((10 * 10) ^ 6)
   })
 
 
