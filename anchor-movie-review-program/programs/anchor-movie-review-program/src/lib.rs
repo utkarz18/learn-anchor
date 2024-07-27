@@ -1,9 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{mint_to, Mint, MintTo, Token, TokenAccount};
+use anchor_spl::token::{mint_to, MintTo};
 
-pub mod constants;
-pub use constants::*;
+pub mod states;
+pub use states::*;
 
 declare_id!("3dg9gResFRGUj6RRNcytvdbEXSyriyvSFnrU1ebJV6d1");
 
@@ -22,13 +21,18 @@ pub mod anchor_movie_review_program {
         msg!("Description: {}", description);
         msg!("Rating: {}", rating);
 
-        require!(rating >= 1 && rating <= 5, MovieReviewError::InvalidRating);
+        require!(rating >= MIN_RATING && rating <= MAX_RATING, MovieReviewError::InvalidRating);
 
         let movie_review = &mut ctx.accounts.movie_review;
         movie_review.reviewer = ctx.accounts.initializer.key();
         movie_review.title = title;
         movie_review.rating = rating;
         movie_review.description = description;
+       
+        msg!("Movie Comment Counter Account Created");
+        let movie_comment_counter = &mut ctx.accounts.movie_comment_counter;
+        movie_comment_counter.counter = 0;
+        msg!("Counter: {}", movie_comment_counter.counter);
 
         mint_to(
             CpiContext::new_with_signer(
@@ -57,7 +61,7 @@ pub mod anchor_movie_review_program {
         msg!("Description: {}", description);
         msg!("Rating: {}", rating);
 
-        require!(rating >= 1 && rating <= 5, MovieReviewError::InvalidRating);
+        require!(rating >= MIN_RATING && rating <= MAX_RATING, MovieReviewError::InvalidRating);
 
         let movie_review = &mut ctx.accounts.movie_review;
         movie_review.rating = rating;
@@ -74,105 +78,22 @@ pub mod anchor_movie_review_program {
         msg!("Token mint initialized");
         Ok(())
     }
-}
 
-#[account]
-pub struct MovieAccountState {
-    pub reviewer: Pubkey,
-    pub rating: u8,
-    pub title: String,
-    pub description: String,
-}
+    pub fn add_comment(ctx: Context<AddMovieComment>, comment: String) -> Result<()> {
+        require!(comment.len() <= MAX_COMMENT_LENGTH, MovieReviewError::CommentTooLong);
 
-impl Space for MovieAccountState {
-    const INIT_SPACE: usize =
-        ANCHOR_DISCRIMINATOR + PUBKEY_SIZE + U8_SIZE + STRING_LENGTH_PREFIX + STRING_LENGTH_PREFIX;
-}
+        let movie_comment = &mut ctx.accounts.movie_comment;
+        let movie_comment_counter = &mut ctx.accounts.movie_comment_counter;
 
-#[derive(Accounts)]
-#[instruction(title:String, description:String)]
-pub struct AddMovieReview<'info> {
-    #[account(
-        init,
-        seeds = [title.as_bytes(), initializer.key().as_ref()],
-        bump,
-        payer = initializer,
-        space = MovieAccountState::INIT_SPACE + title.len() + description.len(),
-    )]
-    pub movie_review: Account<'info, MovieAccountState>,
-    #[account(mut)]
-    pub initializer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    #[account(
-        seeds = ["mint".as_bytes()],
-        bump,
-        mut
-    )]
-    pub mint: Account<'info, Mint>,
-    #[account(
-        init_if_needed,
-        payer = initializer,
-        associated_token::mint = mint,
-        associated_token::authority = initializer,
-    )]
-    pub token_account: Account<'info, TokenAccount>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub rent: Sysvar<'info, Rent>,
-}
+        movie_comment.review = ctx.accounts.movie_review.key();
+        movie_comment.commenter = ctx.accounts.initializer.key();
+        movie_comment.comment = comment;
+        movie_comment_counter.counter += 1;
+        movie_comment.count = movie_comment_counter.counter;
 
-#[derive(Accounts)]
-#[instruction(title:String, description:String)]
-pub struct UpdateMovieReview<'info> {
-    #[account(
-        mut,
-        seeds = [title.as_bytes(), initializer.key().as_ref()],
-        bump,
-        realloc = MovieAccountState::INIT_SPACE + title.len() + description.len(),
-        realloc::payer = initializer,
-        realloc::zero = true,
-    )]
-    pub movie_review: Account<'info, MovieAccountState>,
-    #[account(mut)]
-    pub initializer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
 
-#[derive(Accounts)]
-#[instruction(title: String)]
-pub struct DeleteMovieReview<'info> {
-    #[account(
-        mut,
-        seeds=[title.as_bytes(), initializer.key().as_ref()],
-        bump,
-        close=initializer
-    )]
-    pub movie_review: Account<'info, MovieAccountState>,
-    #[account(mut)]
-    pub initializer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
+        msg!("Comment added");
 
-#[derive(Accounts)]
-pub struct InitializeMint<'info> {
-    #[account(
-        init,
-        seeds = ["mint".as_bytes()],
-        bump,
-        payer = user,
-        mint::decimals = 6,
-        mint::authority = mint,
-    )]
-    pub mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub user: Signer<'info>,
-    pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
-    pub system_program: Program<'info, System>
-}
-
-#[error_code]
-enum MovieReviewError {
-    #[msg("Rating must be between 1 and 5")]
-    InvalidRating,
+        Ok(())
+    }
 }

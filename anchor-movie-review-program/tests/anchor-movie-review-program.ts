@@ -27,8 +27,13 @@ describe("anchor-movie-review-program", () => {
     program.programId
   )
 
+  const [commentCounterPda] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("counter"), moviePda.toBuffer()],
+    program.programId
+  )
+
   it("Initializes the reward token", async () => {
-    const tx = await program.methods.initializeTokenMint().rpc()
+    await program.methods.initializeTokenMint().rpc()
   })
 
   it("Movie review is added`", async () => {
@@ -45,9 +50,9 @@ describe("anchor-movie-review-program", () => {
       .rpc();
 
     const account = await program.account.movieAccountState.fetch(moviePda)
-    expect(movie.title === account.title)
-    expect(movie.rating === account.rating)
-    expect(movie.description === account.description)
+    expect(account.title).to.equal(movie.title);
+    expect(account.rating).to.equal(movie.rating);
+    expect(account.description).to.equal(movie.description);
     expect(account.reviewer.toBase58()).to.equal(provider.wallet.publicKey.toBase58())
 
 
@@ -65,10 +70,42 @@ describe("anchor-movie-review-program", () => {
       .rpc();
 
     const account = await program.account.movieAccountState.fetch(moviePda)
-    expect(movie.title === account.title)
-    expect(newRating === account.rating)
-    expect(newDescription === account.description)
-    expect(account.reviewer === provider.wallet.publicKey)
+    expect(account.title).to.equal(movie.title);
+    expect(account.rating).to.equal(newRating);
+    expect(account.description).to.equal(newDescription);
+    expect(account.reviewer.toBase58()).to.equal(provider.wallet.publicKey.toBase58())
+  })
+
+  it("Adds a comment to a movie review", async () => {
+    const commentCounter = await program.account.movieCommentCounter.fetch(
+      commentCounterPda
+    )
+
+    const [commentPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        moviePda.toBuffer(),
+        commentCounter.counter.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    )
+
+    const testComment = "Just a test comment"
+    const tx = await program.methods
+      .addComment(testComment)
+      .accountsPartial({
+        movieReview: moviePda,
+        movieCommentCounter: commentCounterPda,
+        movieComment: commentPda,
+      })
+      .rpc()
+
+    const commentAccount = await program.account.movieComment.fetch(commentPda);
+    expect(commentAccount.comment).to.equal(testComment);
+    expect(commentAccount.commenter.toBase58()).to.equal(provider.wallet.publicKey.toBase58());
+    expect(commentAccount.count.toNumber()).to.equal(1);
+
+    const commentCounterAccount = await program.account.movieCommentCounter.fetch(commentCounterPda);
+    expect(commentCounterAccount.counter.toNumber()).to.equal(1);
   })
 
 
